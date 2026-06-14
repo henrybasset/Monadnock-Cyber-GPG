@@ -40,6 +40,17 @@ Tags: **[P1]** v1 desktop · **[P2]** fast-follow · **[P3]** later · **[P4]** 
 - **A. Key management [P1]** — create (RSA-4096 / Ed25519), import, export, revoke,
   expiry; friendly keyring (identities, fingerprints, verification status);
   keyserver/WKD; QR fingerprint verify; backup/restore; hardware tokens.
+- **I. Key storage & protection [P1/P2]** — the foundation of a "new generation"
+  PGP: make keys both effortless and genuinely secure.
+  - Secret keys **encrypted at rest** with a wrapping key held in the **macOS
+    Keychain**, gated by **Touch ID / Secure Enclave** — unlock with a
+    fingerprint, never store a plaintext keyring. (Replaces today's dev builds,
+    which store armored keys unencrypted.)
+  - **Passphrase fallback** when biometrics aren't available.
+  - **Hardware token** (YubiKey / OpenPGP card) option — the secret key never
+    leaves the device.
+  - **Local-first, no cloud** by default; optional **user-controlled encrypted
+    backup**. Highest-impact hardening step; do it right after the Mail round trip.
 - **B. File & folder encryption/signing [P1]** — right-click / drag-drop encrypt,
   decrypt, sign, verify (Finder/Explorer); multi-recipient; detached signatures;
   secure shredding; encrypted archives (PGP Zip equivalent).
