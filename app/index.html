@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Monadnock Cyber GPG</title>
+    <script>
+      // Surface any load/runtime error on screen (instead of a blank window).
+      window.addEventListener("error", (e) => {
+        var el = document.getElementById("boot-err");
+        if (el) el.textContent += "\n" + (e.message || e.error) + " @ " + (e.filename || "") + ":" + (e.lineno || "");
+      });
+      window.addEventListener("unhandledrejection", (e) => {
+        var el = document.getElementById("boot-err");
+        var r = e.reason || {};
+        if (el) el.textContent += "\nPromise: " + (r.message || r);
+      });
+    </script>
+  </head>
+  <body style="margin:0;background:#0b1220;color:#e6edf7;font-family:sans-serif">
+    <div id="root" style="padding:24px">Loading Monadnock Cyber GPG…</div>
+    <pre id="boot-err" style="color:#f87171;padding:0 24px;white-space:pre-wrap"></pre>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

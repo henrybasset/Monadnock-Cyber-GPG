@@ -918,10 +918,11 @@ checksum = "953f07c43838f8e6f9758cab68bf5bed85465e7587ebe0b823f1bcd81978ad3a"
 
 [[package]]
 name = "mc-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "sequoia-openpgp",
+ "serde",
 ]
 
 [[package]]
@@ -1419,6 +1420,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
 dependencies = [
  "serde_core",
+ "serde_derive",
 ]
 
 [[package]]

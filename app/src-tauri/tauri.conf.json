@@ -1,10 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Monadnock Cyber GPG",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.monadnockcyber.gpg",
   "build": {
-    "frontendDist": "../ui"
+    "frontendDist": "../dist",
+    "beforeBuildCommand": "npm run build"
   },
   "app": {
     "withGlobalTauri": true,
@@ -12,8 +13,10 @@
       {
         "label": "main",
         "title": "Monadnock Cyber GPG",
-        "width": 580,
-        "height": 800,
+        "width": 1000,
+        "height": 720,
+        "minWidth": 760,
+        "minHeight": 540,
         "resizable": true,
         "visible": true
       }

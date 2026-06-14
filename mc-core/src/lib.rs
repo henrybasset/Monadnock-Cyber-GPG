@@ -1,12 +1,15 @@
-//! Monadnock Cyber GPG — core OpenPGP operations.
+//! Monadnock Cyber GPG — core OpenPGP operations over a simple on-disk keyring.
 //!
-//! Thin, UI-agnostic wrapper over Sequoia-PGP: generate an OpenPGP key, and
-//! encrypt/decrypt text. The Tauri app (and later mobile) call into this crate
-//! so all security-critical logic lives in one place.
+//! UI-agnostic: the Tauri app (and later mobile) call into this crate so all
+//! security-critical logic lives in one place. Keys are stored as armored
+//! files (`<FINGERPRINT>.asc`) under a caller-provided keyring directory.
 
+use std::fs;
 use std::io::Write;
+use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
+use serde::Serialize;
 use sequoia_openpgp as openpgp;
 
 use openpgp::cert::prelude::*;
@@ -20,41 +23,113 @@ use openpgp::policy::{Policy, StandardPolicy};
 use openpgp::serialize::stream::{Armorer, Encryptor2, LiteralWriter, Message};
 use openpgp::serialize::SerializeInto;
 use openpgp::types::SymmetricAlgorithm;
+use openpgp::Cert;
 
-/// A freshly generated OpenPGP key, ASCII-armored.
-#[derive(Debug, Clone)]
-pub struct GeneratedKey {
-    /// Public certificate (shareable).
-    pub public: String,
-    /// Secret key (the Transferable Secret Key) — keep private.
-    pub secret: String,
-    /// Primary key fingerprint.
+/// Summary of a key in the keyring (safe to hand to the UI).
+#[derive(Debug, Clone, Serialize)]
+pub struct CertInfo {
+    /// Uppercase hex fingerprint, no spaces — also the stable id used by the UI.
     pub fingerprint: String,
+    /// Primary user id, e.g. `"Alice <alice@example.org>"`.
+    pub userid: String,
+    /// Whether we hold the secret key (can decrypt / sign with it).
+    pub has_secret: bool,
 }
 
-/// Generate a general-purpose Curve25519 key for `userid`
-/// (e.g. `"Alice <alice@example.org>"`).
-pub fn generate_key(userid: &str) -> Result<GeneratedKey> {
+fn primary_userid(cert: &Cert) -> String {
+    cert.userids()
+        .next()
+        .map(|u| String::from_utf8_lossy(u.userid().value()).to_string())
+        .unwrap_or_else(|| "(no user id)".to_string())
+}
+
+fn info(cert: &Cert) -> CertInfo {
+    CertInfo {
+        fingerprint: cert.fingerprint().to_hex(),
+        userid: primary_userid(cert),
+        has_secret: cert.is_tsk(),
+    }
+}
+
+fn cert_path(keyring: &Path, fingerprint: &str) -> PathBuf {
+    keyring.join(format!("{}.asc", fingerprint.replace(' ', "").to_uppercase()))
+}
+
+fn save(keyring: &Path, cert: &Cert) -> Result<CertInfo> {
+    fs::create_dir_all(keyring)?;
+    let armored = if cert.is_tsk() {
+        cert.as_tsk().armored().to_vec()?
+    } else {
+        cert.armored().to_vec()?
+    };
+    fs::write(cert_path(keyring, &cert.fingerprint().to_hex()), armored)?;
+    Ok(info(cert))
+}
+
+fn load_cert(keyring: &Path, fingerprint: &str) -> Result<Cert> {
+    let path = cert_path(keyring, fingerprint);
+    let bytes = fs::read(&path).with_context(|| format!("no key {fingerprint} in keyring"))?;
+    Cert::from_bytes(&bytes).map_err(Into::into)
+}
+
+/// Generate a general-purpose Curve25519 key for `userid` and store it.
+pub fn generate_key(keyring: &Path, userid: &str) -> Result<CertInfo> {
     let (cert, _revocation) = CertBuilder::new()
         .add_userid(userid)
         .add_signing_subkey()
         .add_transport_encryption_subkey()
         .generate()?;
-
-    // Bind to locals first so the armored temporaries (which borrow `cert`)
-    // drop before `cert` does.
-    let public = String::from_utf8(cert.armored().to_vec()?)?;
-    let secret = String::from_utf8(cert.as_tsk().armored().to_vec()?)?;
-    let fingerprint = cert.fingerprint().to_string();
-
-    Ok(GeneratedKey { public, secret, fingerprint })
+    save(keyring, &cert)
 }
 
-/// Encrypt `plaintext` for the holder of `recipient_public` (armored cert).
-/// Returns ASCII-armored ciphertext.
-pub fn encrypt(plaintext: &str, recipient_public: &str) -> Result<String> {
+/// Import an armored public or secret key, merging with any existing copy.
+pub fn import_cert(keyring: &Path, armored: &str) -> Result<CertInfo> {
+    let cert = Cert::from_bytes(armored.as_bytes()).context("not a valid OpenPGP key")?;
+    let path = cert_path(keyring, &cert.fingerprint().to_hex());
+    let merged = if path.exists() {
+        let existing = Cert::from_bytes(&fs::read(&path)?)?;
+        existing.merge_public_and_secret(cert)?
+    } else {
+        cert
+    };
+    save(keyring, &merged)
+}
+
+/// List every key in the keyring, sorted by user id.
+pub fn list_keys(keyring: &Path) -> Result<Vec<CertInfo>> {
+    let mut out = Vec::new();
+    if keyring.exists() {
+        for entry in fs::read_dir(keyring)? {
+            let path = entry?.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("asc") {
+                if let Ok(cert) = Cert::from_bytes(&fs::read(&path)?) {
+                    out.push(info(&cert));
+                }
+            }
+        }
+    }
+    out.sort_by(|a, b| a.userid.to_lowercase().cmp(&b.userid.to_lowercase()));
+    Ok(out)
+}
+
+/// Export the public certificate (never the secret) for sharing.
+pub fn export_public(keyring: &Path, fingerprint: &str) -> Result<String> {
+    let cert = load_cert(keyring, fingerprint)?;
+    let armored = cert.armored().to_vec()?;
+    Ok(String::from_utf8(armored)?)
+}
+
+/// Delete a key from the keyring.
+pub fn delete_key(keyring: &Path, fingerprint: &str) -> Result<()> {
+    fs::remove_file(cert_path(keyring, fingerprint))
+        .with_context(|| format!("no key {fingerprint} in keyring"))?;
+    Ok(())
+}
+
+/// Encrypt `plaintext` for the keyring key `recipient_fingerprint`.
+pub fn encrypt(keyring: &Path, plaintext: &str, recipient_fingerprint: &str) -> Result<String> {
     let policy = &StandardPolicy::new();
-    let cert = Cert::from_bytes(recipient_public.as_bytes())?;
+    let cert = load_cert(keyring, recipient_fingerprint)?;
 
     let recipients = cert
         .keys()
@@ -76,12 +151,28 @@ pub fn encrypt(plaintext: &str, recipient_public: &str) -> Result<String> {
     Ok(String::from_utf8(sink)?)
 }
 
-/// Decrypt armored `ciphertext` with `secret` (armored TSK). Returns plaintext.
-pub fn decrypt(ciphertext: &str, secret: &str) -> Result<String> {
+/// Decrypt armored `ciphertext` using whichever secret key in the keyring fits.
+pub fn decrypt(keyring: &Path, ciphertext: &str) -> Result<String> {
     let policy = &StandardPolicy::new();
-    let cert = Cert::from_bytes(secret.as_bytes())?;
 
-    let helper = Helper { policy, secret: &cert };
+    let mut secret_certs = Vec::new();
+    if keyring.exists() {
+        for entry in fs::read_dir(keyring)? {
+            let path = entry?.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("asc") {
+                if let Ok(cert) = Cert::from_bytes(&fs::read(&path)?) {
+                    if cert.is_tsk() {
+                        secret_certs.push(cert);
+                    }
+                }
+            }
+        }
+    }
+    if secret_certs.is_empty() {
+        return Err(anyhow!("no secret keys in the keyring to decrypt with"));
+    }
+
+    let helper = Helper { policy, certs: secret_certs };
     let mut decryptor =
         DecryptorBuilder::from_bytes(ciphertext.as_bytes())?.with_policy(policy, None, helper)?;
 
@@ -92,12 +183,12 @@ pub fn decrypt(ciphertext: &str, secret: &str) -> Result<String> {
 
 struct Helper<'a> {
     policy: &'a dyn Policy,
-    secret: &'a Cert,
+    certs: Vec<Cert>,
 }
 
 impl<'a> VerificationHelper for Helper<'a> {
     fn get_certs(&mut self, _ids: &[openpgp::KeyHandle]) -> Result<Vec<Cert>> {
-        Ok(Vec::new()) // Phase 0: not verifying signatures yet.
+        Ok(Vec::new())
     }
     fn check(&mut self, _structure: MessageStructure) -> Result<()> {
         Ok(())
@@ -115,29 +206,29 @@ impl<'a> DecryptionHelper for Helper<'a> {
     where
         D: FnMut(SymmetricAlgorithm, &SessionKey) -> bool,
     {
-        let keypair = self
-            .secret
-            .keys()
-            .unencrypted_secret()
-            .with_policy(self.policy, None)
-            .for_transport_encryption()
-            .next()
-            .ok_or_else(|| anyhow!("no usable decryption subkey"))?
-            .key()
-            .clone()
-            .into_keypair()?;
-
-        let mut keypair = keypair;
-        for pkesk in pkesks {
-            if pkesk
-                .decrypt(&mut keypair, sym_algo)
-                .map(|(algo, session_key)| decrypt(algo, &session_key))
-                .unwrap_or(false)
+        for cert in &self.certs {
+            for ka in cert
+                .keys()
+                .unencrypted_secret()
+                .with_policy(self.policy, None)
+                .for_transport_encryption()
             {
-                return Ok(Some(self.secret.fingerprint()));
+                let mut keypair = match ka.key().clone().into_keypair() {
+                    Ok(kp) => kp,
+                    Err(_) => continue,
+                };
+                for pkesk in pkesks {
+                    if pkesk
+                        .decrypt(&mut keypair, sym_algo)
+                        .map(|(algo, session_key)| decrypt(algo, &session_key))
+                        .unwrap_or(false)
+                    {
+                        return Ok(Some(cert.fingerprint()));
+                    }
+                }
             }
         }
-        Err(anyhow!("could not decrypt with this key"))
+        Err(anyhow!("no matching secret key in keyring"))
     }
 }
 
@@ -145,17 +236,37 @@ impl<'a> DecryptionHelper for Helper<'a> {
 mod tests {
     use super::*;
 
+    fn tmp(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("mc-{}-{}", tag, std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        d
+    }
+
     #[test]
-    fn round_trip() {
-        let key = generate_key("Test User <test@example.org>").expect("keygen");
-        assert!(key.public.contains("BEGIN PGP PUBLIC KEY BLOCK"));
-        assert!(key.secret.contains("BEGIN PGP PRIVATE KEY BLOCK"));
+    fn keyring_encrypt_decrypt_and_export() {
+        let dir = tmp("kr");
+        let _alice = generate_key(&dir, "Alice <alice@example.org>").unwrap();
+        let bob = generate_key(&dir, "Bob <bob@example.org>").unwrap();
 
-        let secret_msg = "Hello from Monadnock Cyber GPG!";
-        let ct = encrypt(secret_msg, &key.public).expect("encrypt");
+        let keys = list_keys(&dir).unwrap();
+        assert_eq!(keys.len(), 2);
+        assert!(keys.iter().all(|k| k.has_secret));
+
+        let ct = encrypt(&dir, "secret message", &bob.fingerprint).unwrap();
         assert!(ct.contains("BEGIN PGP MESSAGE"));
+        let pt = decrypt(&dir, &ct).unwrap();
+        assert_eq!(pt, "secret message");
 
-        let pt = decrypt(&ct, &key.secret).expect("decrypt");
-        assert_eq!(pt, secret_msg);
+        // Exported key is public-only and re-imports without secret.
+        let pubkey = export_public(&dir, &bob.fingerprint).unwrap();
+        assert!(pubkey.contains("PUBLIC KEY") && !pubkey.contains("PRIVATE KEY"));
+
+        let dir2 = tmp("kr2");
+        let imported = import_cert(&dir2, &pubkey).unwrap();
+        assert_eq!(imported.fingerprint, bob.fingerprint);
+        assert!(!imported.has_secret);
+
+        fs::remove_dir_all(&dir).ok();
+        fs::remove_dir_all(&dir2).ok();
     }
 }
