@@ -58,15 +58,22 @@ final class SecurityHandler: NSObject, MEMessageSecurityHandler {
         return MEDecodedMessage(data: Data(decoded.utf8), securityInformation: info, context: nil)
     }
 
-    // MARK: - Encode (outgoing) — v1 passthrough
+    // MARK: - Encode (outgoing)
 
     func getEncodingStatus(
         for message: MEMessage,
         composeContext: MEComposeContext,
         completionHandler: @escaping (MEOutgoingMessageEncodingStatus) -> Void
     ) {
+        let emails = message.allRecipientAddresses.compactMap { $0.addressString }
+        let missing = emails.isEmpty ? emails : MCCore.missingKeys(for: emails)
+        let canEncrypt = !emails.isEmpty && missing.isEmpty
+        dbg("encodingStatus: recipients=\(emails) canEncrypt=\(canEncrypt) missing=\(missing)")
         completionHandler(MEOutgoingMessageEncodingStatus(
-            canSign: false, canEncrypt: false, securityError: nil, addressesFailingEncryption: []))
+            canSign: false,
+            canEncrypt: canEncrypt,
+            securityError: nil,
+            addressesFailingEncryption: missing.map { MEEmailAddress(rawString: $0) }))
     }
 
     func encode(
@@ -74,8 +81,46 @@ final class SecurityHandler: NSObject, MEMessageSecurityHandler {
         composeContext: MEComposeContext,
         completionHandler: @escaping (MEMessageEncodingResult) -> Void
     ) {
+        dbg("encode called: shouldEncrypt=\(composeContext.shouldEncrypt)")
+        guard composeContext.shouldEncrypt else {
+            completionHandler(MEMessageEncodingResult(
+                encodedMessage: nil, signingError: nil, encryptionError: nil))
+            return
+        }
+        let emails = message.allRecipientAddresses.compactMap { $0.addressString }
+        guard let raw = message.rawData,
+              let rawStr = String(data: raw, encoding: .utf8) ?? String(data: raw, encoding: .ascii) else {
+            completionHandler(MEMessageEncodingResult(encodedMessage: nil, signingError: nil,
+                encryptionError: Self.err("Couldn't read the outgoing message.")))
+            return
+        }
+        let (headers, body) = Self.splitMIME(rawStr)
+        guard let ciphertext = MCCore.encrypt(body, toEmails: emails) else {
+            dbg("encode: encryption failed for \(emails)")
+            completionHandler(MEMessageEncodingResult(encodedMessage: nil, signingError: nil,
+                encryptionError: Self.err("No key for one or more recipients.")))
+            return
+        }
+        dbg("encode: encrypted to \(emails) (\(ciphertext.count) chars)")
+        let encoded = headers + "\r\n\r\n" + ciphertext + "\r\n"
         completionHandler(MEMessageEncodingResult(
-            encodedMessage: nil, signingError: nil, encryptionError: nil))
+            encodedMessage: MEEncodedOutgoingMessage(
+                rawData: Data(encoded.utf8), isSigned: false, isEncrypted: true),
+            signingError: nil, encryptionError: nil))
+    }
+
+    private static func err(_ msg: String) -> NSError {
+        NSError(domain: "MonadnockCyberGPG", code: 2, userInfo: [NSLocalizedDescriptionKey: msg])
+    }
+
+    private static func splitMIME(_ raw: String) -> (headers: String, body: String) {
+        if let r = raw.range(of: "\r\n\r\n") {
+            return (String(raw[..<r.lowerBound]), String(raw[r.upperBound...]))
+        }
+        if let r = raw.range(of: "\n\n") {
+            return (String(raw[..<r.lowerBound]), String(raw[r.upperBound...]))
+        }
+        return ("", raw)
     }
 
     // MARK: - Security UI (none in v1)

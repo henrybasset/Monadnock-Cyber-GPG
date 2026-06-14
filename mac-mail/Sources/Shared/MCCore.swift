@@ -38,6 +38,19 @@ enum MCCore {
         take(mc_import(keyringPath, armored))
     }
 
+    /// Encrypt to multiple recipients identified by email address.
+    static func encrypt(_ text: String, toEmails emails: [String]) -> String? {
+        take(mc_encrypt_to(keyringPath, text, emails.joined(separator: "\n")))
+    }
+
+    /// Of `emails`, which ones have no key (so we can't encrypt to them).
+    static func missingKeys(for emails: [String]) -> [String] {
+        guard let s = take(mc_missing_keys(keyringPath, emails.joined(separator: "\n"))) else {
+            return emails
+        }
+        return s.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
+    }
+
     struct KeyInfo: Decodable, Identifiable {
         let fingerprint: String
         let userid: String

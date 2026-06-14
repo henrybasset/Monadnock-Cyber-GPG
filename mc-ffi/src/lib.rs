@@ -107,6 +107,37 @@ pub extern "C" fn mc_import(keyring: *const c_char, armored: *const c_char) -> *
     }
 }
 
+/// Encrypt `plaintext` to recipients given as newline-separated emails. NULL on failure.
+#[no_mangle]
+pub extern "C" fn mc_encrypt_to(
+    keyring: *const c_char,
+    plaintext: *const c_char,
+    emails: *const c_char,
+) -> *mut c_char {
+    let (Some(kr), Some(pt), Some(em)) = (
+        unsafe { as_str(keyring) },
+        unsafe { as_str(plaintext) },
+        unsafe { as_str(emails) },
+    ) else {
+        return std::ptr::null_mut();
+    };
+    let list: Vec<String> = em.split('\n').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+    match mc_core::encrypt_to_emails(Path::new(kr), pt, &list) {
+        Ok(ct) => to_c(ct),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// Of the newline-separated `emails`, return those with NO key (newline-joined).
+#[no_mangle]
+pub extern "C" fn mc_missing_keys(keyring: *const c_char, emails: *const c_char) -> *mut c_char {
+    let (Some(kr), Some(em)) = (unsafe { as_str(keyring) }, unsafe { as_str(emails) }) else {
+        return std::ptr::null_mut();
+    };
+    let list: Vec<String> = em.split('\n').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+    to_c(mc_core::emails_without_keys(Path::new(kr), &list).join("\n"))
+}
+
 /// Free a string returned by this library.
 #[no_mangle]
 pub extern "C" fn mc_string_free(s: *mut c_char) {

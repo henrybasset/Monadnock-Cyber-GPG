@@ -152,6 +152,74 @@ pub fn encrypt(keyring: &Path, plaintext: &str, recipient_fingerprint: &str) -> 
     Ok(String::from_utf8(sink)?)
 }
 
+/// Find a key in the keyring whose user id contains `email` (case-insensitive).
+fn cert_for_email(keyring: &Path, email: &str) -> Option<Cert> {
+    let needle = email.to_lowercase();
+    let entries = fs::read_dir(keyring).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("asc") {
+            continue;
+        }
+        let Ok(bytes) = fs::read(&path) else { continue };
+        let Ok(cert) = Cert::from_bytes(&bytes) else { continue };
+        for uid in cert.userids() {
+            if String::from_utf8_lossy(uid.userid().value())
+                .to_lowercase()
+                .contains(&needle)
+            {
+                return Some(cert);
+            }
+        }
+    }
+    None
+}
+
+/// Of `emails`, which have NO key in the keyring (so we can't encrypt to them).
+pub fn emails_without_keys(keyring: &Path, emails: &[String]) -> Vec<String> {
+    emails
+        .iter()
+        .filter(|e| !e.is_empty() && cert_for_email(keyring, e).is_none())
+        .cloned()
+        .collect()
+}
+
+/// Encrypt `plaintext` to every recipient identified by `emails` (multi-recipient).
+pub fn encrypt_to_emails(keyring: &Path, plaintext: &str, emails: &[String]) -> Result<String> {
+    let policy = &StandardPolicy::new();
+    let certs: Vec<Cert> = emails.iter().filter_map(|e| cert_for_email(keyring, e)).collect();
+    if certs.is_empty() {
+        return Err(anyhow!("no keys found for any recipient"));
+    }
+    let mut recipients = Vec::new();
+    for cert in &certs {
+        for ka in cert
+            .keys()
+            .with_policy(policy, None)
+            .supported()
+            .alive()
+            .revoked(false)
+            .for_transport_encryption()
+        {
+            recipients.push(ka);
+        }
+    }
+    if recipients.is_empty() {
+        return Err(anyhow!("recipient keys have no usable encryption subkey"));
+    }
+
+    let mut sink: Vec<u8> = Vec::new();
+    {
+        let message = Message::new(&mut sink);
+        let message = Armorer::new(message).build()?;
+        let message = Encryptor2::for_recipients(message, recipients).build()?;
+        let mut writer = LiteralWriter::new(message).build()?;
+        writer.write_all(plaintext.as_bytes())?;
+        writer.finalize()?;
+    }
+    Ok(String::from_utf8(sink)?)
+}
+
 /// Decrypt armored `ciphertext` using whichever secret key in the keyring fits.
 pub fn decrypt(keyring: &Path, ciphertext: &str) -> Result<String> {
     let policy = &StandardPolicy::new();
@@ -452,6 +520,24 @@ mod tests {
         decrypt_file(&dir, &enc, &dec).unwrap();
 
         assert_eq!(fs::read(&dec).unwrap(), b"file contents 123");
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn encrypt_to_emails_multi() {
+        let dir = tmp("eml");
+        generate_key(&dir, "Alice <alice@example.org>").unwrap();
+        generate_key(&dir, "Bob <bob@example.org>").unwrap();
+
+        let missing = emails_without_keys(
+            &dir, &["alice@example.org".into(), "nobody@example.com".into()]);
+        assert_eq!(missing, vec!["nobody@example.com".to_string()]);
+
+        let ct = encrypt_to_emails(
+            &dir, "multi-recipient", &["alice@example.org".into(), "bob@example.org".into()]).unwrap();
+        assert!(ct.contains("BEGIN PGP MESSAGE"));
+        assert_eq!(decrypt(&dir, &ct).unwrap(), "multi-recipient");
+
         fs::remove_dir_all(&dir).ok();
     }
 }

@@ -15,6 +15,8 @@ char *mc_sign(const char *keyring, const char *text, const char *signer);
 char *mc_list_json(const char *keyring);
 char *mc_generate(const char *keyring, const char *userid);
 char *mc_import(const char *keyring, const char *armored);
+char *mc_encrypt_to(const char *keyring, const char *plaintext, const char *emails);
+char *mc_missing_keys(const char *keyring, const char *emails);
 void mc_string_free(char *s);
 
 #ifdef __cplusplus
