@@ -22,12 +22,17 @@
   <string>$(CURRENT_PROJECT_VERSION)</string>
   <key>NSExtension</key>
   <dict>
+    <key>NSExtensionAttributes</key>
+    <dict>
+      <key>MEExtensionCapabilities</key>
+      <array>
+        <string>MEMessageSecurityHandler</string>
+      </array>
+    </dict>
     <key>NSExtensionPointIdentifier</key>
     <string>com.apple.email.extension</string>
     <key>NSExtensionPrincipalClass</key>
     <string>MailExtension</string>
-    <key>MEMessageSecurityName</key>
-    <string>Monadnock Cyber GPG</string>
   </dict>
 </dict>
 </plist>
