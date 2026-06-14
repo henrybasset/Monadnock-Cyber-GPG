@@ -13,6 +13,8 @@ import {
   encryptFile,
   decryptFile,
   revealPath,
+  composeMail,
+  decryptSelectedMail,
   prettyFpr,
 } from "./lib/api.js";
 
@@ -71,6 +73,7 @@ const NAV = [
   { id: "decrypt", label: "Decrypt", icon: "🔓" },
   { id: "sign", label: "Sign", icon: "✍️" },
   { id: "files", label: "Files", icon: "📁" },
+  { id: "email", label: "Email", icon: "✉️" },
 ];
 
 export default function App() {
@@ -153,6 +156,7 @@ export default function App() {
           {view === "decrypt" && <DecryptView keys={keys} flash={flash} copy={copy} />}
           {view === "sign" && <SignView keys={keys} flash={flash} copy={copy} />}
           {view === "files" && <FilesView keys={keys} flash={flash} />}
+          {view === "email" && <EmailView keys={keys} flash={flash} copy={copy} />}
         </div>
       </main>
 
@@ -630,6 +634,114 @@ function FilesView({ keys, flash }) {
             <div className="mt-1 break-all font-mono text-xs text-slate-300">{last.path}</div>
           </div>
         )}
+      </div>
+    </>
+  );
+}
+
+function EmailView({ keys, flash, copy }) {
+  const [recipient, setRecipient] = useState("");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [out, setOut] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!recipient && keys.length) setRecipient(keys[0].fingerprint);
+  }, [keys]); // eslint-disable-line
+
+  const compose = async () => {
+    if (!recipient) return flash("Choose a recipient.", false);
+    if (!body) return flash("Write a message.", false);
+    setBusy(true);
+    try {
+      await composeMail(recipient, subject, body);
+      flash("Opened in Mail — review and hit Send ✉️", true);
+    } catch (e) {
+      flash(String(e), false);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const decryptSel = async () => {
+    setBusy(true);
+    try {
+      setOut(await decryptSelectedMail());
+      flash("Decrypted the selected message ✓", true);
+    } catch (e) {
+      setOut("");
+      flash(String(e), false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <Header
+        title="Email"
+        subtitle="Send encrypted mail through Apple Mail, and read encrypted mail you've selected."
+      />
+      <div className="space-y-4">
+        <Card title="Write an encrypted email" subtitle="Encrypts your message, then opens a ready-to-send draft in Mail.">
+          {keys.length === 0 ? (
+            <p className="text-sm text-slate-500">Add the recipient's key first (Keys tab).</p>
+          ) : (
+            <>
+              <Label>To</Label>
+              <select className={inputCls} value={recipient} onChange={(e) => setRecipient(e.target.value)}>
+                {keys.map((k) => (
+                  <option key={k.fingerprint} value={k.fingerprint}>
+                    {k.userid}
+                  </option>
+                ))}
+              </select>
+              <div className="mt-4">
+                <Label>Subject</Label>
+                <input
+                  className={inputCls}
+                  placeholder="(optional)"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                />
+              </div>
+              <div className="mt-4">
+                <Label>Message</Label>
+                <textarea
+                  className={`${inputCls} h-28 resize-none`}
+                  placeholder="Write your message…"
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                />
+              </div>
+              <div className="mt-4">
+                <Button onClick={compose} disabled={busy}>
+                  {busy ? "Working…" : "Encrypt & open in Mail"}
+                </Button>
+              </div>
+            </>
+          )}
+        </Card>
+
+        <Card title="Read an encrypted email" subtitle="Select an encrypted message in Mail, then click below.">
+          <Button variant="ghost" onClick={decryptSel} disabled={busy}>
+            {busy ? "Working…" : "Decrypt selected Mail message"}
+          </Button>
+          {out && (
+            <div className="mt-4">
+              <textarea readOnly value={out} className={`${inputCls} h-32 resize-none`} />
+              <div className="mt-3">
+                <Button variant="ghost" onClick={() => copy(out, "Text copied")}>
+                  Copy
+                </Button>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <p className="text-xs text-slate-500">
+          The first time, macOS asks permission to control Mail — click OK.
+        </p>
       </div>
     </>
   );

@@ -97,6 +97,96 @@ async fn decrypt_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
     Ok(Some(output.to_string_lossy().to_string()))
 }
 
+// ---- Apple Mail integration (macOS), via osascript -------------------------
+
+fn run_osascript(script: &str) -> Result<String, String> {
+    use std::io::Write;
+    let mut child = std::process::Command::new("osascript")
+        .arg("-")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    child
+        .stdin
+        .as_mut()
+        .ok_or("osascript stdin")?
+        .write_all(script.as_bytes())
+        .map_err(|e| e.to_string())?;
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
+/// Quote a string as an AppleScript string literal.
+fn as_str(s: &str) -> String {
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+fn extract_email(userid: &str) -> Option<String> {
+    if let (Some(a), Some(b)) = (userid.find('<'), userid.find('>')) {
+        if b > a + 1 {
+            return Some(userid[a + 1..b].trim().to_string());
+        }
+    }
+    if userid.contains('@') {
+        return Some(userid.trim().to_string());
+    }
+    None
+}
+
+fn extract_pgp_block(text: &str) -> Option<String> {
+    let start = text.find("-----BEGIN PGP MESSAGE-----")?;
+    let marker = "-----END PGP MESSAGE-----";
+    let end = text[start..].find(marker)? + start + marker.len();
+    Some(text[start..end].to_string())
+}
+
+/// Encrypt `body` for `recipient` (fingerprint) and open a ready-to-send draft
+/// in Apple Mail.
+#[tauri::command]
+async fn compose_mail(
+    app: tauri::AppHandle,
+    recipient: String,
+    subject: String,
+    body: String,
+) -> Result<(), String> {
+    let kr = keyring(&app)?;
+    let keys = mc_core::list_keys(&kr).map_err(|e| e.to_string())?;
+    let key = keys
+        .iter()
+        .find(|k| k.fingerprint == recipient)
+        .ok_or("recipient key not found")?;
+    let email = extract_email(&key.userid).ok_or("that key has no email address")?;
+    let ciphertext = mc_core::encrypt(&kr, &body, &recipient).map_err(|e| e.to_string())?;
+
+    let script = format!(
+        "tell application \"Mail\"\n  activate\n  set m to make new outgoing message with properties {{subject:{}, content:{}, visible:true}}\n  tell m to make new to recipient at end of to recipients with properties {{address:{}}}\nend tell",
+        as_str(&subject),
+        as_str(&ciphertext),
+        as_str(&email)
+    );
+    run_osascript(&script)?;
+    Ok(())
+}
+
+/// Decrypt the message currently selected in Apple Mail.
+#[tauri::command]
+async fn decrypt_selected_mail(app: tauri::AppHandle) -> Result<String, String> {
+    let kr = keyring(&app)?;
+    let script = "tell application \"Mail\"\n  set sel to selection\n  if sel is {} then return \"\"\n  return content of (item 1 of sel)\nend tell";
+    let content = run_osascript(script)?;
+    if content.trim().is_empty() {
+        return Err("No message selected in Mail — open/select an encrypted email first.".into());
+    }
+    let block = extract_pgp_block(&content)
+        .ok_or("The selected message has no PGP-encrypted block.")?;
+    mc_core::decrypt(&kr, &block).map_err(|e| e.to_string())
+}
+
 /// Reveal a file in Finder (macOS) / Explorer (Windows), highlighting it.
 #[tauri::command]
 fn reveal(path: String) -> Result<(), String> {
@@ -187,7 +277,9 @@ fn main() {
             verify,
             encrypt_file,
             decrypt_file,
-            reveal
+            reveal,
+            compose_mail,
+            decrypt_selected_mail
         ])
         .setup(|app| {
             // Live in the menu bar without a Dock icon, but the window is still a
