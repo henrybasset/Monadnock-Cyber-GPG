@@ -7,6 +7,8 @@ import {
   deleteKey,
   encryptText,
   decryptText,
+  signText,
+  verifyText,
   prettyFpr,
 } from "./lib/api.js";
 
@@ -63,6 +65,7 @@ const NAV = [
   { id: "keys", label: "Keys", icon: "🔑" },
   { id: "encrypt", label: "Encrypt", icon: "🔒" },
   { id: "decrypt", label: "Decrypt", icon: "🔓" },
+  { id: "sign", label: "Sign", icon: "✍️" },
 ];
 
 export default function App() {
@@ -138,6 +141,7 @@ export default function App() {
           )}
           {view === "encrypt" && <EncryptView keys={keys} flash={flash} copy={copy} />}
           {view === "decrypt" && <DecryptView keys={keys} flash={flash} copy={copy} />}
+          {view === "sign" && <SignView keys={keys} flash={flash} copy={copy} />}
         </div>
       </main>
 
@@ -411,6 +415,117 @@ function DecryptView({ flash, copy }) {
             </div>
           </Card>
         )}
+      </div>
+    </>
+  );
+}
+
+function SignView({ keys, flash, copy }) {
+  const [signer, setSigner] = useState("");
+  const [text, setText] = useState("");
+  const [out, setOut] = useState("");
+  const [toVerify, setToVerify] = useState("");
+  const [result, setResult] = useState(null);
+
+  const signerKeys = keys.filter((k) => k.has_secret);
+  useEffect(() => {
+    if (!signer && signerKeys.length) setSigner(signerKeys[0].fingerprint);
+  }, [keys]); // eslint-disable-line
+
+  const doSign = async () => {
+    if (!signer) return flash("Choose a key to sign with.", false);
+    if (!text) return flash("Type something to sign.", false);
+    try {
+      setOut(await signText(text, signer));
+      flash("Signed ✓", true);
+    } catch (e) {
+      flash(String(e), false);
+    }
+  };
+  const doVerify = async () => {
+    if (!toVerify.trim()) return flash("Paste a signed message.", false);
+    try {
+      setResult(await verifyText(toVerify.trim()));
+    } catch (e) {
+      setResult(null);
+      flash(String(e), false);
+    }
+  };
+
+  return (
+    <>
+      <Header title="Sign & Verify" subtitle="Prove a message is from you — or check who signed one." />
+      <div className="space-y-4">
+        <Card title="Sign a message">
+          {signerKeys.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              You need one of your own keys (create one in Keys).
+            </p>
+          ) : (
+            <>
+              <Label>Sign with</Label>
+              <select className={inputCls} value={signer} onChange={(e) => setSigner(e.target.value)}>
+                {signerKeys.map((k) => (
+                  <option key={k.fingerprint} value={k.fingerprint}>
+                    {k.userid}
+                  </option>
+                ))}
+              </select>
+              <div className="mt-4">
+                <Label>Message</Label>
+                <textarea
+                  className={`${inputCls} h-28 resize-none`}
+                  placeholder="Type a message to sign…"
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                />
+              </div>
+              <div className="mt-4">
+                <Button onClick={doSign}>Sign</Button>
+              </div>
+              {out && (
+                <div className="mt-4">
+                  <Mono>{out}</Mono>
+                  <div className="mt-3">
+                    <Button variant="ghost" onClick={() => copy(out, "Signed message copied")}>
+                      Copy
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+
+        <Card title="Verify a signed message">
+          <textarea
+            className={`${inputCls} h-32 resize-none font-mono text-xs`}
+            placeholder="-----BEGIN PGP MESSAGE-----"
+            value={toVerify}
+            onChange={(e) => setToVerify(e.target.value)}
+          />
+          <div className="mt-3">
+            <Button variant="ghost" onClick={doVerify}>
+              Verify
+            </Button>
+          </div>
+          {result &&
+            (result.valid ? (
+              <div className="mt-4 rounded-xl border border-emerald-700/40 bg-emerald-500/10 p-4">
+                <div className="text-sm font-semibold text-emerald-300">✓ Valid signature</div>
+                <div className="mt-1 text-xs text-slate-300">
+                  Signed by {result.signer || "an unknown key"}
+                </div>
+                <div className="mt-3 whitespace-pre-wrap rounded-lg bg-slate-950/60 p-3 text-sm">
+                  {result.text}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-xl border border-rose-700/40 bg-rose-500/10 p-4 text-sm font-semibold text-rose-300">
+                ✗ Couldn't verify — unknown signer or the message was changed.
+              </div>
+            ))}
+        </Card>
       </div>
     </>
   );

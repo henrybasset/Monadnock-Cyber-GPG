@@ -16,11 +16,12 @@ use openpgp::cert::prelude::*;
 use openpgp::crypto::SessionKey;
 use openpgp::packet::{PKESK, SKESK};
 use openpgp::parse::stream::{
-    DecryptionHelper, DecryptorBuilder, MessageStructure, VerificationHelper,
+    DecryptionHelper, DecryptorBuilder, MessageLayer, MessageStructure, VerificationHelper,
+    VerifierBuilder,
 };
 use openpgp::parse::Parse;
 use openpgp::policy::{Policy, StandardPolicy};
-use openpgp::serialize::stream::{Armorer, Encryptor2, LiteralWriter, Message};
+use openpgp::serialize::stream::{Armorer, Encryptor2, LiteralWriter, Message, Signer};
 use openpgp::serialize::SerializeInto;
 use openpgp::types::SymmetricAlgorithm;
 use openpgp::Cert;
@@ -181,6 +182,110 @@ pub fn decrypt(keyring: &Path, ciphertext: &str) -> Result<String> {
     Ok(String::from_utf8(plaintext)?)
 }
 
+/// Outcome of verifying a signed message.
+#[derive(Debug, Clone, Serialize)]
+pub struct VerifyOutcome {
+    pub valid: bool,
+    pub signer: Option<String>,
+    pub text: String,
+}
+
+fn all_certs(keyring: &Path) -> Result<Vec<Cert>> {
+    let mut out = Vec::new();
+    if keyring.exists() {
+        for entry in fs::read_dir(keyring)? {
+            let path = entry?.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("asc") {
+                if let Ok(cert) = Cert::from_bytes(&fs::read(&path)?) {
+                    out.push(cert);
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Sign `text` with the keyring key `signer_fingerprint`; armored signed message.
+pub fn sign(keyring: &Path, text: &str, signer_fingerprint: &str) -> Result<String> {
+    let policy = &StandardPolicy::new();
+    let cert = load_cert(keyring, signer_fingerprint)?;
+    let keypair = cert
+        .keys()
+        .unencrypted_secret()
+        .with_policy(policy, None)
+        .for_signing()
+        .next()
+        .ok_or_else(|| anyhow!("no signing key for {signer_fingerprint}"))?
+        .key()
+        .clone()
+        .into_keypair()?;
+
+    let mut sink: Vec<u8> = Vec::new();
+    {
+        let message = Message::new(&mut sink);
+        let message = Armorer::new(message).build()?;
+        let message = Signer::new(message, keypair).build()?;
+        let mut writer = LiteralWriter::new(message).build()?;
+        writer.write_all(text.as_bytes())?;
+        writer.finalize()?;
+    }
+    Ok(String::from_utf8(sink)?)
+}
+
+/// Verify an armored signed message against the keyring.
+pub fn verify(keyring: &Path, signed: &str) -> Result<VerifyOutcome> {
+    let policy = &StandardPolicy::new();
+    let helper = VerifyHelper {
+        certs: all_certs(keyring)?,
+        signer: None,
+    };
+    let mut content: Vec<u8> = Vec::new();
+    let mut verifier =
+        VerifierBuilder::from_bytes(signed.as_bytes())?.with_policy(policy, None, helper)?;
+    match std::io::copy(&mut verifier, &mut content) {
+        Ok(_) => Ok(VerifyOutcome {
+            valid: true,
+            signer: verifier.helper_ref().signer.clone(),
+            text: String::from_utf8(content)?,
+        }),
+        Err(_) => Ok(VerifyOutcome {
+            valid: false,
+            signer: None,
+            text: String::new(),
+        }),
+    }
+}
+
+struct VerifyHelper {
+    certs: Vec<Cert>,
+    signer: Option<String>,
+}
+
+impl VerificationHelper for VerifyHelper {
+    fn get_certs(&mut self, _ids: &[openpgp::KeyHandle]) -> Result<Vec<Cert>> {
+        Ok(self.certs.clone())
+    }
+    fn check(&mut self, structure: MessageStructure) -> Result<()> {
+        for layer in structure.into_iter() {
+            if let MessageLayer::SignatureGroup { results } = layer {
+                for result in results {
+                    if let Ok(good) = result {
+                        let fpr = good.ka.cert().fingerprint().to_hex();
+                        self.signer = self
+                            .certs
+                            .iter()
+                            .find(|c| c.fingerprint().to_hex() == fpr)
+                            .map(primary_userid)
+                            .or(Some(fpr));
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        Err(anyhow!("no valid signature"))
+    }
+}
+
 struct Helper<'a> {
     policy: &'a dyn Policy,
     certs: Vec<Cert>,
@@ -268,5 +373,26 @@ mod tests {
 
         fs::remove_dir_all(&dir).ok();
         fs::remove_dir_all(&dir2).ok();
+    }
+
+    #[test]
+    fn sign_and_verify() {
+        let dir = tmp("sv");
+        let alice = generate_key(&dir, "Alice <alice@example.org>").unwrap();
+
+        let signed = sign(&dir, "trust me", &alice.fingerprint).unwrap();
+        assert!(signed.contains("BEGIN PGP MESSAGE"));
+
+        let outcome = verify(&dir, &signed).unwrap();
+        assert!(outcome.valid);
+        assert_eq!(outcome.text, "trust me");
+        assert!(outcome.signer.unwrap().contains("Alice"));
+
+        // A tampered message should not verify.
+        let tampered = signed.replace("trust me", "trust me ");
+        let bad = verify(&dir, &tampered).unwrap();
+        assert!(!bad.valid || bad.text != "trust me ");
+
+        fs::remove_dir_all(&dir).ok();
     }
 }

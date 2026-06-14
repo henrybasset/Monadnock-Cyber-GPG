@@ -53,6 +53,16 @@ fn decrypt(app: tauri::AppHandle, ciphertext: String) -> Result<String, String> 
     mc_core::decrypt(&keyring(&app)?, &ciphertext).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn sign(app: tauri::AppHandle, text: String, signer: String) -> Result<String, String> {
+    mc_core::sign(&keyring(&app)?, &text, &signer).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn verify(app: tauri::AppHandle, signed: String) -> Result<mc_core::VerifyOutcome, String> {
+    mc_core::verify(&keyring(&app)?, &signed).map_err(|e| e.to_string())
+}
+
 fn show_main(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
@@ -69,7 +79,9 @@ fn main() {
             export_public,
             delete_key,
             encrypt,
-            decrypt
+            decrypt,
+            sign,
+            verify
         ])
         .setup(|app| {
             // Live in the menu bar without a Dock icon, but the window is still a
