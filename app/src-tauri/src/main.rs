@@ -10,6 +10,7 @@ use tauri::{
     tray::TrayIconBuilder,
     Manager,
 };
+use tauri_plugin_dialog::DialogExt;
 
 fn keyring(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path()
@@ -63,6 +64,36 @@ fn verify(app: tauri::AppHandle, signed: String) -> Result<mc_core::VerifyOutcom
     mc_core::verify(&keyring(&app)?, &signed).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn encrypt_file(app: tauri::AppHandle, recipient: String) -> Result<Option<String>, String> {
+    let Some(picked) = app.dialog().file().blocking_pick_file() else {
+        return Ok(None);
+    };
+    let input = picked.into_path().map_err(|e| e.to_string())?;
+    let mut out = input.clone().into_os_string();
+    out.push(".pgp");
+    let output = PathBuf::from(out);
+    mc_core::encrypt_file(&keyring(&app)?, &input, &output, &recipient).map_err(|e| e.to_string())?;
+    Ok(Some(output.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+fn decrypt_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let Some(picked) = app.dialog().file().blocking_pick_file() else {
+        return Ok(None);
+    };
+    let input = picked.into_path().map_err(|e| e.to_string())?;
+    let output = if input.extension().and_then(|e| e.to_str()) == Some("pgp") {
+        input.with_extension("")
+    } else {
+        let mut o = input.clone().into_os_string();
+        o.push(".decrypted");
+        PathBuf::from(o)
+    };
+    mc_core::decrypt_file(&keyring(&app)?, &input, &output).map_err(|e| e.to_string())?;
+    Ok(Some(output.to_string_lossy().to_string()))
+}
+
 fn show_main(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
@@ -72,6 +103,7 @@ fn show_main(app: &tauri::AppHandle) {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             list_keys,
             generate_key,
@@ -81,7 +113,9 @@ fn main() {
             encrypt,
             decrypt,
             sign,
-            verify
+            verify,
+            encrypt_file,
+            decrypt_file
         ])
         .setup(|app| {
             // Live in the menu bar without a Dock icon, but the window is still a

@@ -337,6 +337,49 @@ impl<'a> DecryptionHelper for Helper<'a> {
     }
 }
 
+/// Encrypt a file on disk for `recipient_fingerprint` (binary OpenPGP output).
+pub fn encrypt_file(
+    keyring: &Path,
+    input: &Path,
+    output: &Path,
+    recipient_fingerprint: &str,
+) -> Result<()> {
+    let policy = &StandardPolicy::new();
+    let cert = load_cert(keyring, recipient_fingerprint)?;
+    let recipients = cert
+        .keys()
+        .with_policy(policy, None)
+        .supported()
+        .alive()
+        .revoked(false)
+        .for_transport_encryption();
+
+    let mut sink = fs::File::create(output)?;
+    let message = Message::new(&mut sink);
+    let message = Encryptor2::for_recipients(message, recipients).build()?;
+    let mut writer = LiteralWriter::new(message).build()?;
+    let mut reader = fs::File::open(input)?;
+    std::io::copy(&mut reader, &mut writer)?;
+    writer.finalize()?;
+    Ok(())
+}
+
+/// Decrypt an OpenPGP file using whichever secret key in the keyring fits.
+pub fn decrypt_file(keyring: &Path, input: &Path, output: &Path) -> Result<()> {
+    let policy = &StandardPolicy::new();
+    let secret_certs: Vec<Cert> = all_certs(keyring)?.into_iter().filter(|c| c.is_tsk()).collect();
+    if secret_certs.is_empty() {
+        return Err(anyhow!("no secret keys in the keyring to decrypt with"));
+    }
+    let helper = Helper { policy, certs: secret_certs };
+    let reader = fs::File::open(input)?;
+    let mut decryptor =
+        DecryptorBuilder::from_reader(reader)?.with_policy(policy, None, helper)?;
+    let mut out = fs::File::create(output)?;
+    std::io::copy(&mut decryptor, &mut out)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,6 +436,22 @@ mod tests {
         let bad = verify(&dir, &tampered).unwrap();
         assert!(!bad.valid || bad.text != "trust me ");
 
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn file_round_trip() {
+        let dir = tmp("file");
+        let bob = generate_key(&dir, "Bob <bob@example.org>").unwrap();
+
+        let plain = dir.join("secret.txt");
+        fs::write(&plain, b"file contents 123").unwrap();
+        let enc = dir.join("secret.txt.pgp");
+        encrypt_file(&dir, &plain, &enc, &bob.fingerprint).unwrap();
+        let dec = dir.join("secret.out.txt");
+        decrypt_file(&dir, &enc, &dec).unwrap();
+
+        assert_eq!(fs::read(&dec).unwrap(), b"file contents 123");
         fs::remove_dir_all(&dir).ok();
     }
 }

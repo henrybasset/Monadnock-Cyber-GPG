@@ -9,6 +9,8 @@ import {
   decryptText,
   signText,
   verifyText,
+  encryptFile,
+  decryptFile,
   prettyFpr,
 } from "./lib/api.js";
 
@@ -66,6 +68,7 @@ const NAV = [
   { id: "encrypt", label: "Encrypt", icon: "🔒" },
   { id: "decrypt", label: "Decrypt", icon: "🔓" },
   { id: "sign", label: "Sign", icon: "✍️" },
+  { id: "files", label: "Files", icon: "📁" },
 ];
 
 export default function App() {
@@ -142,6 +145,7 @@ export default function App() {
           {view === "encrypt" && <EncryptView keys={keys} flash={flash} copy={copy} />}
           {view === "decrypt" && <DecryptView keys={keys} flash={flash} copy={copy} />}
           {view === "sign" && <SignView keys={keys} flash={flash} copy={copy} />}
+          {view === "files" && <FilesView keys={keys} flash={flash} />}
         </div>
       </main>
 
@@ -526,6 +530,97 @@ function SignView({ keys, flash, copy }) {
               </div>
             ))}
         </Card>
+      </div>
+    </>
+  );
+}
+
+function FilesView({ keys, flash }) {
+  const [recipient, setRecipient] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [last, setLast] = useState(null);
+
+  useEffect(() => {
+    if (!recipient && keys.length) setRecipient(keys[0].fingerprint);
+  }, [keys]); // eslint-disable-line
+
+  const enc = async () => {
+    if (!recipient) return flash("Choose a recipient.", false);
+    setBusy(true);
+    try {
+      const out = await encryptFile(recipient);
+      if (out) {
+        setLast({ kind: "Encrypted", path: out });
+        flash("File encrypted ✓", true);
+      }
+    } catch (e) {
+      flash(String(e), false);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const dec = async () => {
+    setBusy(true);
+    try {
+      const out = await decryptFile();
+      if (out) {
+        setLast({ kind: "Decrypted", path: out });
+        flash("File decrypted ✓", true);
+      }
+    } catch (e) {
+      flash(String(e), false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <Header
+        title="Files"
+        subtitle="Encrypt or decrypt files on your Mac — pick a file, the result is saved next to it."
+      />
+      <div className="space-y-4">
+        <Card title="Encrypt a file">
+          {keys.length === 0 ? (
+            <p className="text-sm text-slate-500">Add a key first (Keys tab).</p>
+          ) : (
+            <>
+              <Label>Recipient</Label>
+              <select className={inputCls} value={recipient} onChange={(e) => setRecipient(e.target.value)}>
+                {keys.map((k) => (
+                  <option key={k.fingerprint} value={k.fingerprint}>
+                    {k.userid}
+                  </option>
+                ))}
+              </select>
+              <div className="mt-4">
+                <Button onClick={enc} disabled={busy}>
+                  {busy ? "Working…" : "Choose file & encrypt"}
+                </Button>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Saves an encrypted copy as <span className="font-mono">name.ext.pgp</span> next to the original.
+              </p>
+            </>
+          )}
+        </Card>
+
+        <Card title="Decrypt a file">
+          <Button variant="ghost" onClick={dec} disabled={busy}>
+            {busy ? "Working…" : "Choose file & decrypt"}
+          </Button>
+          <p className="mt-2 text-xs text-slate-500">
+            Decrypts a <span className="font-mono">.pgp</span> file with a secret key in your keyring.
+          </p>
+        </Card>
+
+        {last && (
+          <div className="rounded-xl border border-emerald-700/40 bg-emerald-500/10 p-4">
+            <div className="text-sm font-semibold text-emerald-300">{last.kind} ✓</div>
+            <div className="mt-1 break-all font-mono text-xs text-slate-300">{last.path}</div>
+          </div>
+        )}
       </div>
     </>
   );

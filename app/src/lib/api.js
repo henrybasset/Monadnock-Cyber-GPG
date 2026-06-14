@@ -11,6 +11,8 @@ export const encryptText = (plaintext, recipient) =>
 export const decryptText = (ciphertext) => invoke("decrypt", { ciphertext });
 export const signText = (text, signer) => invoke("sign", { text, signer });
 export const verifyText = (signed) => invoke("verify", { signed });
+export const encryptFile = (recipient) => invoke("encrypt_file", { recipient });
+export const decryptFile = () => invoke("decrypt_file");
 
 // Pretty-print a hex fingerprint in groups of four.
 export const prettyFpr = (fpr) => (fpr.match(/.{1,4}/g) || []).join(" ");
