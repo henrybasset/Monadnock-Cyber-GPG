@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        width: 380px; margin: 0; padding: 14px;
+        background: #0b1220; color: #e6edf7;
+        font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      header { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
+      .logo { width: 26px; height: 26px; border-radius: 7px;
+        background: linear-gradient(160deg, #6d5ef6, #392cb0); }
+      h1 { font-size: 14px; margin: 0; }
+      .sub { font-size: 11px; color: #8aa0bd; }
+      .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+      .tab { flex: 1; text-align: center; padding: 6px; border-radius: 8px;
+        background: #131c2e; color: #8aa0bd; cursor: pointer; font-weight: 600; font-size: 12px; }
+      .tab.active { background: rgba(79,70,229,.18); color: #c7d2fe; }
+      .card { background: #131c2e; border: 1px solid #233149; border-radius: 12px;
+        padding: 12px; margin-bottom: 10px; }
+      label { display: block; font-size: 11px; color: #8aa0bd; margin: 8px 0 4px; }
+      input, textarea, select {
+        width: 100%; background: #0a1120; color: #e6edf7; border: 1px solid #233149;
+        border-radius: 8px; padding: 7px 9px; font: inherit;
+      }
+      textarea { resize: vertical; min-height: 64px; font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
+      button { background: linear-gradient(160deg, #6d5ef6, #4338ca); color: #fff; border: 0;
+        border-radius: 8px; padding: 7px 13px; font: inherit; font-weight: 600; cursor: pointer; margin-top: 8px; }
+      button.ghost { background: #1a2742; border: 1px solid #233149; }
+      .row { display: flex; gap: 6px; }
+      .keyitem { display: flex; justify-content: space-between; align-items: center;
+        background: #0a1120; border: 1px solid #233149; border-radius: 8px; padding: 7px 9px; margin-top: 6px; }
+      .fpr { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: #6b7c99; }
+      .badge { font-size: 9px; padding: 2px 6px; border-radius: 99px; }
+      .secret { background: rgba(52,211,153,.15); color: #34d399; }
+      .public { background: #2a3756; color: #9fb0cc; }
+      .status { font-size: 11px; min-height: 14px; margin-top: 6px; }
+      .ok { color: #34d399; } .err { color: #f87171; }
+      .hide { display: none; }
+      .hint { font-size: 11px; color: #6b7c99; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="logo"></div>
+      <div>
+        <h1>Monadnock Cyber GPG</h1>
+        <div class="sub">OpenPGP for your browser</div>
+      </div>
+    </header>
+
+    <div class="tabs">
+      <div class="tab active" data-tab="keys">Keys</div>
+      <div class="tab" data-tab="encrypt">Encrypt</div>
+      <div class="tab" data-tab="decrypt">Decrypt</div>
+    </div>
+
+    <section id="tab-keys">
+      <div class="card">
+        <strong>New key</strong>
+        <label>Name &amp; email</label>
+        <input id="gen-name" placeholder="Jane Doe" />
+        <input id="gen-email" placeholder="jane@example.com" style="margin-top:6px" />
+        <button id="gen-btn">Generate</button>
+        <div id="gen-status" class="status"></div>
+      </div>
+      <div class="card">
+        <strong>Your keys</strong>
+        <div id="keylist"></div>
+      </div>
+      <div class="card">
+        <strong>Import a key</strong>
+        <textarea id="import-text" placeholder="-----BEGIN PGP PUBLIC KEY BLOCK-----"></textarea>
+        <button id="import-btn" class="ghost">Import</button>
+        <div id="import-status" class="status"></div>
+      </div>
+    </section>
+
+    <section id="tab-encrypt" class="hide">
+      <div class="card">
+        <label>Recipient</label>
+        <select id="enc-recipient"></select>
+        <label>Message</label>
+        <textarea id="enc-text"></textarea>
+        <button id="enc-btn">Encrypt</button>
+        <div id="enc-status" class="status"></div>
+        <textarea id="enc-out" class="hide" readonly></textarea>
+        <button id="enc-copy" class="ghost hide">Copy</button>
+      </div>
+    </section>
+
+    <section id="tab-decrypt" class="hide">
+      <div class="card">
+        <label>Encrypted message</label>
+        <textarea id="dec-text" placeholder="-----BEGIN PGP MESSAGE-----"></textarea>
+        <button id="dec-btn">Decrypt</button>
+        <div id="dec-status" class="status"></div>
+        <textarea id="dec-out" class="hide" readonly></textarea>
+        <button id="dec-copy" class="ghost hide">Copy</button>
+      </div>
+      <p class="hint">Tip: in webmail, select the encrypted text and right-click → <em>Decrypt with Monadnock GPG</em>.</p>
+    </section>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
