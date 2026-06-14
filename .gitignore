@@ -1,0 +1,28 @@
+# Rust
+/target
+**/target
+Cargo.lock.bak
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+*.local
+
+# Env / secrets
+.env
+.env.*
+
+# Build artifacts (signed installers live on Releases, not in git)
+*.dmg
+*.dmg.sha256
+*.dmg.asc
+*.msi
+*.exe.sig
+
+# macOS
+.DS_Store
