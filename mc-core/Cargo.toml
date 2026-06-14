@@ -1,0 +1,15 @@
+[package]
+name = "mc-core"
+version = "0.1.0"
+edition = "2021"
+description = "Monadnock Cyber GPG — core OpenPGP operations (Sequoia-PGP)"
+license = "Apache-2.0"
+
+[dependencies]
+anyhow = "1"
+# Pure-Rust crypto backend so there are no system crypto-lib (Nettle) deps.
+sequoia-openpgp = { version = "1", default-features = false, features = [
+  "crypto-rust",
+  "allow-experimental-crypto",
+  "allow-variable-time-crypto",
+] }

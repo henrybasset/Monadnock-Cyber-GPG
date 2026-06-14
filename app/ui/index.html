@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Monadnock Cyber GPG</title>
+  <style>
+    :root {
+      --bg: #0b1220; --panel: #131c2e; --panel2: #0f1726;
+      --accent: #3b82f6; --accent2: #1d4ed8; --text: #e6edf7;
+      --muted: #8aa0bd; --line: #233149; --ok: #34d399; --err: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: radial-gradient(1200px 600px at 70% -10%, #1b2a4a 0%, var(--bg) 55%);
+      min-height: 100vh; padding: 20px;
+    }
+    header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+    .logo { width: 34px; height: 34px; border-radius: 9px;
+      background: linear-gradient(160deg, var(--accent), var(--accent2)); }
+    h1 { font-size: 18px; margin: 0; letter-spacing: .2px; }
+    .sub { color: var(--muted); font-size: 12px; }
+    .card { background: linear-gradient(180deg, var(--panel), var(--panel2));
+      border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+    .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em;
+      color: var(--muted); margin: 0 0 12px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+    input, textarea {
+      width: 100%; background: #0a1120; color: var(--text);
+      border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; font: inherit;
+    }
+    textarea { resize: vertical; min-height: 64px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+    button {
+      background: linear-gradient(160deg, var(--accent), var(--accent2)); color: white;
+      border: 0; border-radius: 9px; padding: 9px 16px; font: inherit; font-weight: 600;
+      cursor: pointer; margin-top: 10px;
+    }
+    button:hover { filter: brightness(1.08); }
+    button.ghost { background: #1a2742; border: 1px solid var(--line); }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+    .pill { display: inline-block; background: #0a1120; border: 1px solid var(--line);
+      border-radius: 999px; padding: 3px 10px; color: var(--muted); font-size: 11px; }
+    .status { font-size: 12px; margin-top: 8px; min-height: 16px; }
+    .status.ok { color: var(--ok); } .status.err { color: var(--err); }
+    .hint { color: var(--muted); font-size: 11px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo"></div>
+    <div>
+      <h1>Monadnock Cyber GPG</h1>
+      <div class="sub">Phase 0 proof-of-concept · OpenPGP via Sequoia-PGP</div>
+    </div>
+  </header>
+
+  <div class="card">
+    <h2>1 · Your key</h2>
+    <label>Name &amp; email</label>
+    <input id="userid" value="Henry Basset <henrybasset@gmail.com>" />
+    <button id="genBtn">Generate key</button>
+    <div id="genStatus" class="status"></div>
+    <div id="fpr" class="pill" style="display:none"></div>
+  </div>
+
+  <div class="card">
+    <h2>2 · Encrypt</h2>
+    <label>Message</label>
+    <textarea id="plain">Hello from Monadnock Cyber GPG!</textarea>
+    <div class="hint">Encrypts to your generated key (Phase 0). Recipient picker comes later.</div>
+    <button id="encBtn">Encrypt</button>
+    <div id="encStatus" class="status"></div>
+    <textarea id="cipher" class="mono" placeholder="-----BEGIN PGP MESSAGE-----" readonly></textarea>
+  </div>
+
+  <div class="card">
+    <h2>3 · Decrypt</h2>
+    <button id="decBtn" class="ghost">Decrypt the above</button>
+    <div id="decStatus" class="status"></div>
+    <textarea id="decrypted" placeholder="(plaintext appears here)" readonly></textarea>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

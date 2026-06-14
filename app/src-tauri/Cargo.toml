@@ -1,0 +1,17 @@
+[package]
+name = "monadnock-cyber-gpg"
+version = "0.1.0"
+edition = "2021"
+description = "Monadnock Cyber GPG — Phase 0 menu-bar app"
+license = "Apache-2.0"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# default-features=false drops the `compression` feature (brotli), which pulls in
+# alloc-no-stdlib/brotli-decompressor — those don't compile on Rust 1.96.
+tauri = { version = "2", default-features = false, features = ["wry", "tray-icon"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+mc-core = { path = "../../mc-core" }

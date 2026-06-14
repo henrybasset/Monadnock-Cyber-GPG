@@ -5,9 +5,9 @@ encryption, email, an encrypted vault, and (later) secure messaging and voice �
 a beautiful, easy-to-use app that lives in your **menu bar / system tray** and
 interoperates with existing **GPG/OpenPGP** keys.
 
-> **Status: early planning.** This repo currently holds the
-> [requirements & architecture spec](REQUIREMENTS.md). Code scaffolding (Phase 0)
-> comes next.
+> **Status: Phase 0 works.** A menu-bar app (Tauri 2 + Rust) generates an OpenPGP
+> key and encrypts/decrypts text through the [`mc-core`](mc-core) Sequoia-PGP
+> crypto core. See the [requirements spec](REQUIREMENTS.md) for the full roadmap.
 
 ## Vision
 
@@ -41,6 +41,36 @@ See **[REQUIREMENTS.md](REQUIREMENTS.md)** for the full spec, threat model, and 
 
 - **Core:** Rust + [`sequoia-openpgp`](https://crates.io/crates/sequoia-openpgp)
 - **UI:** [Tauri 2](https://tauri.app) + React + Tailwind + shadcn/ui
+
+## Build & run (Phase 0)
+
+Requires [Rust](https://rustup.rs) and Node. From the repo root:
+
+```sh
+# run the crypto core's round-trip test
+cd mc-core && cargo test
+
+# build & launch the menu-bar app
+cd ../app/src-tauri && cargo run
+```
+
+The app appears in the **menu bar / system tray** (a padlock icon). The window
+lets you generate a key and encrypt/decrypt text — proving the Tauri ⇆ Rust ⇆
+Sequoia stack end to end.
+
+## Repository layout
+
+```
+mc-core/        Rust crypto core (Sequoia-PGP): generate_key, encrypt, decrypt
+app/
+  ui/           Phase 0 frontend (static HTML/JS; React+Tailwind lands in Phase 1)
+  src-tauri/    Tauri 2 shell — commands, menu-bar/tray, window
+  icon/         icon generator + source PNG
+REQUIREMENTS.md Full spec & roadmap
+```
+
+> Phase 0 uses a minimal static UI to prove the stack; the React + Tailwind +
+> shadcn/ui interface from the spec arrives in Phase 1.
 
 ## Contributing
 
