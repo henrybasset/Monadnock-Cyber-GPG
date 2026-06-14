@@ -12,6 +12,7 @@ import {
   verifyText,
   encryptFile,
   decryptFile,
+  revealPath,
   prettyFpr,
 } from "./lib/api.js";
 
@@ -558,6 +559,7 @@ function FilesView({ keys, flash }) {
       if (out) {
         setLast({ kind: "Encrypted", path: out });
         flash("File encrypted ✓", true);
+        revealPath(out);
       }
     } catch (e) {
       flash(String(e), false);
@@ -572,6 +574,7 @@ function FilesView({ keys, flash }) {
       if (out) {
         setLast({ kind: "Decrypted", path: out });
         flash("File decrypted ✓", true);
+        revealPath(out);
       }
     } catch (e) {
       flash(String(e), false);
@@ -623,7 +626,7 @@ function FilesView({ keys, flash }) {
 
         {last && (
           <div className="rounded-xl border border-emerald-700/40 bg-emerald-500/10 p-4">
-            <div className="text-sm font-semibold text-emerald-300">{last.kind} ✓</div>
+            <div className="text-sm font-semibold text-emerald-300">{last.kind} ✓ — shown in Finder</div>
             <div className="mt-1 break-all font-mono text-xs text-slate-300">{last.path}</div>
           </div>
         )}

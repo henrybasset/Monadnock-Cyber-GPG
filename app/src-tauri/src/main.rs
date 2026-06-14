@@ -97,6 +97,35 @@ async fn decrypt_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
     Ok(Some(output.to_string_lossy().to_string()))
 }
 
+/// Reveal a file in Finder (macOS) / Explorer (Windows), highlighting it.
+#[tauri::command]
+fn reveal(path: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("open");
+        c.arg("-R").arg(&path);
+        c
+    };
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("explorer");
+        c.arg(format!("/select,{}", path));
+        c
+    };
+    #[cfg(target_os = "linux")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("xdg-open");
+        let parent = std::path::Path::new(&path)
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_default();
+        c.arg(parent);
+        c
+    };
+    cmd.spawn().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn show_main(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
@@ -157,7 +186,8 @@ fn main() {
             sign,
             verify,
             encrypt_file,
-            decrypt_file
+            decrypt_file,
+            reveal
         ])
         .setup(|app| {
             // Live in the menu bar without a Dock icon, but the window is still a
