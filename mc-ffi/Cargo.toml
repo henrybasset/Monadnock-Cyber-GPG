@@ -1,0 +1,15 @@
+[package]
+name = "mc-ffi"
+version = "0.1.0"
+edition = "2021"
+description = "Monadnock Cyber GPG — C ABI over mc-core, for the Swift/MailKit extension"
+license = "Apache-2.0"
+
+[lib]
+name = "mc_ffi"
+# staticlib for linking into the Xcode (Swift) targets.
+crate-type = ["staticlib"]
+
+[dependencies]
+mc-core = { path = "../mc-core" }
+serde_json = "1"
