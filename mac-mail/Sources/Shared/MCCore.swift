@@ -2,13 +2,17 @@ import Foundation
 
 /// Swift wrapper over the mc-ffi C library (the shared Rust crypto core).
 enum MCCore {
-    /// For the (unsandboxed) host app: share the desktop app's keyring so your
-    /// existing keys appear. The sandboxed Mail extension will instead use an
-    /// App Group container (set MC_KEYRING_OVERRIDE there).
+    static let appGroup = "group.com.monadnockcyber.gpg"
+
+    /// Signed builds (host app + sandboxed Mail extension) share the keyring in
+    /// the App Group container. Unsigned dev builds fall back to the desktop
+    /// app's keyring so existing keys still show.
     static var keyringPath: String {
         if let override = overrideKeyring { return override }
-        let home = NSHomeDirectory()
-        return home + "/Library/Application Support/com.monadnockcyber.gpg/keyring"
+        if let group = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) {
+            return group.appendingPathComponent("keyring").path
+        }
+        return NSHomeDirectory() + "/Library/Application Support/com.monadnockcyber.gpg/keyring"
     }
     static var overrideKeyring: String?
 

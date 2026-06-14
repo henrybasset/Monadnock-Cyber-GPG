@@ -30,12 +30,35 @@ targets:
       - sdk: CoreFoundation.framework
       - sdk: Security.framework
       - sdk: SystemConfiguration.framework
+      - target: MonadnockMailExtension
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.monadnockcyber.gpg.mailhost
+        CODE_SIGN_ENTITLEMENTS: Sources/Host/Host.entitlements
         GENERATE_INFOPLIST_FILE: "YES"
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         ENABLE_HARDENED_RUNTIME: "YES"
         INFOPLIST_KEY_NSHumanReadableCopyright: "Apache-2.0"
         INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.utilities"
+
+  MonadnockMailExtension:
+    type: app-extension
+    platform: macOS
+    sources:
+      - Sources/Extension
+      - Sources/Shared
+    dependencies:
+      - sdk: CoreFoundation.framework
+      - sdk: Security.framework
+      - sdk: SystemConfiguration.framework
+      - sdk: MailKit.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.monadnockcyber.gpg.mailhost.extension
+        INFOPLIST_FILE: Sources/Extension/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Sources/Extension/Extension.entitlements
+        ENABLE_HARDENED_RUNTIME: "YES"
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
