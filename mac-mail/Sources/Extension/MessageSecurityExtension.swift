@@ -1,7 +1,21 @@
 import Foundation
 import MailKit
 
-/// Principal class Mail loads. It vends the message-security handler.
+/// Append a debug line to a file in the App Group container, which we can read
+/// from outside (os_log default level isn't persisted in Release builds).
+private func dbg(_ s: String) {
+    guard let dir = FileManager.default.containerURL(
+        forSecurityApplicationGroupIdentifier: "group.com.monadnockcyber.gpg") else { return }
+    let url = dir.appendingPathComponent("decode.log")
+    let line = (s + "\n").data(using: .utf8)!
+    if let h = try? FileHandle(forWritingTo: url) {
+        h.seekToEndOfFile(); h.write(line); try? h.close()
+    } else {
+        try? line.write(to: url)
+    }
+}
+
+/// Principal class Mail loads. Vends the message-security handler.
 @objc(MailExtension)
 @MainActor
 final class MailExtension: NSObject, MEExtension {
@@ -10,43 +24,49 @@ final class MailExtension: NSObject, MEExtension {
     }
 }
 
-/// Decrypts inline-PGP messages inside Mail via the shared Rust core (mc-ffi).
-/// v1: incoming decryption. Outgoing encryption and PGP/MIME come next.
 @MainActor
 final class SecurityHandler: NSObject, MEMessageSecurityHandler {
 
-    // MARK: - Decode (incoming mail)
+    // MARK: - Decode (incoming)
 
     func decodedMessage(forMessageData data: Data) -> MEDecodedMessage? {
-        let raw = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .ascii)
-        guard let raw,
-              let block = Self.extractPGPMessage(raw),
-              let plaintext = MCCore.decrypt(block)
-        else {
-            return nil // not an encrypted message we can read — let Mail proceed
+        dbg("decode called: \(data.count) bytes")
+        guard let raw = String(data: data, encoding: .utf8)
+            ?? String(data: data, encoding: .ascii) else {
+            dbg("not decodable as text"); return nil
         }
+        guard let block = Self.extractPGPMessage(raw) else {
+            dbg("no PGP block — passing through"); return nil
+        }
+        dbg("found PGP block (\(block.count) chars); keyring=\(MCCore.keyringPath)")
 
-        let mime = "Content-Type: text/plain; charset=utf-8\r\n"
-            + "Content-Transfer-Encoding: 8bit\r\n\r\n"
-            + plaintext
+        guard let plaintext = MCCore.decrypt(block) else {
+            dbg("decrypt FAILED")
+            let info = MEMessageSecurityInformation(
+                signers: [], isEncrypted: true, signingError: nil,
+                encryptionError: NSError(domain: "MonadnockCyberGPG", code: 1, userInfo: [
+                    NSLocalizedDescriptionKey: "No matching key, or message couldn't be decrypted."]))
+            return MEDecodedMessage(data: nil, securityInformation: info, context: nil)
+        }
+        dbg("decrypted OK (\(plaintext.count) chars)")
+
+        // Replace the ciphertext block with plaintext, keeping the original
+        // headers/structure so Mail renders a valid message.
+        let decoded = raw.replacingOccurrences(of: block, with: plaintext)
         let info = MEMessageSecurityInformation(
-            signers: [], isEncrypted: true, signingError: nil, encryptionError: nil
-        )
-        return MEDecodedMessage(data: Data(mime.utf8), securityInformation: info, context: nil)
+            signers: [], isEncrypted: true, signingError: nil, encryptionError: nil)
+        return MEDecodedMessage(data: Data(decoded.utf8), securityInformation: info, context: nil)
     }
 
-    // MARK: - Encode (outgoing mail) — v1 passthrough
+    // MARK: - Encode (outgoing) — v1 passthrough
 
     func getEncodingStatus(
         for message: MEMessage,
         composeContext: MEComposeContext,
         completionHandler: @escaping (MEOutgoingMessageEncodingStatus) -> Void
     ) {
-        completionHandler(
-            MEOutgoingMessageEncodingStatus(
-                canSign: false, canEncrypt: false, securityError: nil, addressesFailingEncryption: []
-            )
-        )
+        completionHandler(MEOutgoingMessageEncodingStatus(
+            canSign: false, canEncrypt: false, securityError: nil, addressesFailingEncryption: []))
     }
 
     func encode(
@@ -54,9 +74,8 @@ final class SecurityHandler: NSObject, MEMessageSecurityHandler {
         composeContext: MEComposeContext,
         completionHandler: @escaping (MEMessageEncodingResult) -> Void
     ) {
-        completionHandler(
-            MEMessageEncodingResult(encodedMessage: nil, signingError: nil, encryptionError: nil)
-        )
+        completionHandler(MEMessageEncodingResult(
+            encodedMessage: nil, signingError: nil, encryptionError: nil))
     }
 
     // MARK: - Security UI (none in v1)
