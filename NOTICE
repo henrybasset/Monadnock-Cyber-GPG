@@ -1,0 +1,7 @@
+Monadnock Cyber GPG
+Copyright 2026 Monadnock Cyber
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product is built on Sequoia-PGP (https://sequoia-pgp.org), licensed under
+LGPL-2.0-or-later, and other open-source components, each under its own license.

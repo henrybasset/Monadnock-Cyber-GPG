@@ -9,7 +9,7 @@ with existing GPG/OpenPGP keys.
 - **Scope:** the full suite, delivered as a phased roadmap (not all in v1).
 - **Platforms:** Desktop first (**Windows + macOS**); iOS/Android (and possibly web) later.
 - **Crypto base:** **Full OpenPGP**, GPG-interoperable, built on **Sequoia-PGP**.
-- **License:** MIT. **UI:** React + Tailwind + shadcn/ui on **Tauri 2**.
+- **License:** Apache-2.0. **UI:** React + Tailwind + shadcn/ui on **Tauri 2**.
 
 ## Principles
 1. **Never roll our own crypto.** All OpenPGP via the vetted **Sequoia-PGP** (Rust)
