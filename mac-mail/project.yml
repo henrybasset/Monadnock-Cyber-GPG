@@ -1,0 +1,41 @@
+name: MonadnockMail
+options:
+  bundleIdPrefix: com.monadnockcyber.gpg
+  deploymentTarget:
+    macOS: "13.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: CH6SA3EQMS
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_OBJC_BRIDGING_HEADER: Sources/Shared/Bridging.h
+    HEADER_SEARCH_PATHS:
+      - $(SRCROOT)/../mc-ffi/include
+    LIBRARY_SEARCH_PATHS:
+      - $(SRCROOT)/vendor
+    OTHER_LDFLAGS:
+      - -lmc_ffi
+      - -liconv
+
+targets:
+  MonadnockMail:
+    type: application
+    platform: macOS
+    sources:
+      - Sources/Host
+      - Sources/Shared
+    dependencies:
+      - sdk: CoreFoundation.framework
+      - sdk: Security.framework
+      - sdk: SystemConfiguration.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.monadnockcyber.gpg.mailhost
+        GENERATE_INFOPLIST_FILE: "YES"
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ENABLE_HARDENED_RUNTIME: "YES"
+        INFOPLIST_KEY_NSHumanReadableCopyright: "Apache-2.0"
+        INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.utilities"
