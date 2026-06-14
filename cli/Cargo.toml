@@ -1,0 +1,14 @@
+[package]
+name = "mc-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Monadnock Cyber GPG — command-line core (shares the app keyring)"
+license = "Apache-2.0"
+
+[[bin]]
+name = "mc"
+path = "src/main.rs"
+
+[dependencies]
+mc-core = { path = "../mc-core" }
+anyhow = "1"
