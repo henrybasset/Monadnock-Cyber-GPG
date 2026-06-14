@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import {
   listKeys,
   generateKey,
@@ -85,6 +86,11 @@ export default function App() {
   };
   useEffect(() => {
     refresh();
+    const un = listen("tray-toast", (e) => {
+      const msg = String(e.payload);
+      flash(msg, !/fail/i.test(msg));
+    });
+    return () => un.then((f) => f());
   }, []);
 
   function flash(msg, ok = true) {

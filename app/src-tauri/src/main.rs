@@ -8,8 +8,9 @@ use std::path::PathBuf;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    Manager,
+    Emitter, Manager,
 };
+use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 
 fn keyring(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -64,8 +65,10 @@ fn verify(app: tauri::AppHandle, signed: String) -> Result<mc_core::VerifyOutcom
     mc_core::verify(&keyring(&app)?, &signed).map_err(|e| e.to_string())
 }
 
+// Async so Tauri runs these off the main thread — a blocking native file panel
+// on the main thread deadlocks the UI.
 #[tauri::command]
-fn encrypt_file(app: tauri::AppHandle, recipient: String) -> Result<Option<String>, String> {
+async fn encrypt_file(app: tauri::AppHandle, recipient: String) -> Result<Option<String>, String> {
     let Some(picked) = app.dialog().file().blocking_pick_file() else {
         return Ok(None);
     };
@@ -78,7 +81,7 @@ fn encrypt_file(app: tauri::AppHandle, recipient: String) -> Result<Option<Strin
 }
 
 #[tauri::command]
-fn decrypt_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
+async fn decrypt_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let Some(picked) = app.dialog().file().blocking_pick_file() else {
         return Ok(None);
     };
@@ -101,9 +104,48 @@ fn show_main(app: &tauri::AppHandle) {
     }
 }
 
+// Tray quick actions: transform the clipboard in place. Clipboard + crypto are
+// fast and need no event loop, so running on the tray (main) thread is fine.
+fn clip_encrypt(app: &tauri::AppHandle) {
+    let Ok(kr) = keyring(app) else { return };
+    let Ok(text) = app.clipboard().read_text() else {
+        let _ = app.emit("tray-toast", "Clipboard has no text");
+        return;
+    };
+    let keys = mc_core::list_keys(&kr).unwrap_or_default();
+    let Some(first) = keys.first() else {
+        let _ = app.emit("tray-toast", "No keys yet — create one first");
+        return;
+    };
+    match mc_core::encrypt(&kr, &text, &first.fingerprint) {
+        Ok(ct) => {
+            let _ = app.clipboard().write_text(ct);
+            let _ = app.emit("tray-toast", format!("Clipboard encrypted to {} ✓", first.userid));
+        }
+        Err(e) => {
+            let _ = app.emit("tray-toast", format!("Encrypt failed: {e}"));
+        }
+    }
+}
+
+fn clip_decrypt(app: &tauri::AppHandle) {
+    let Ok(kr) = keyring(app) else { return };
+    let Ok(text) = app.clipboard().read_text() else { return };
+    match mc_core::decrypt(&kr, &text) {
+        Ok(pt) => {
+            let _ = app.clipboard().write_text(pt);
+            let _ = app.emit("tray-toast", "Clipboard decrypted ✓");
+        }
+        Err(e) => {
+            let _ = app.emit("tray-toast", format!("Decrypt failed: {e}"));
+        }
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .invoke_handler(tauri::generate_handler![
             list_keys,
             generate_key,
@@ -123,9 +165,14 @@ fn main() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Regular);
 
-            let open = MenuItem::with_id(app, "open", "Open Monadnock Cyber GPG", true, None::<&str>)?;
+            let enc_clip =
+                MenuItem::with_id(app, "enc_clip", "Encrypt Clipboard", true, None::<&str>)?;
+            let dec_clip =
+                MenuItem::with_id(app, "dec_clip", "Decrypt Clipboard", true, None::<&str>)?;
+            let open =
+                MenuItem::with_id(app, "open", "Open Monadnock Cyber GPG", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &quit])?;
+            let menu = Menu::with_items(app, &[&enc_clip, &dec_clip, &open, &quit])?;
 
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -133,6 +180,8 @@ fn main() {
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
+                    "enc_clip" => clip_encrypt(app),
+                    "dec_clip" => clip_decrypt(app),
                     "open" => show_main(app),
                     "quit" => app.exit(0),
                     _ => {}
